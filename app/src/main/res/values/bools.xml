@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Dar ekranda kenar çubuğu yalnız ikon gösterir; 56dp'ye etiket sığmıyor.
+      Geniş ekranlarda (values-w600dp) etiketler açılıyor.
+    -->
+    <bool name="sidebar_show_labels">false</bool>
+
+    <!--
+      Parmakla dokunulan ekran mı? Televizyon (dokunmatik yok) için false,
+      values-finger içinde true. Geri düğmesi, ses çubuğu gibi dokunmatik
+      kontroller yalnızca true iken görünür; kumandada odak sırasını bozmasınlar.
+    -->
+    <bool name="is_touch">false</bool>
+</resources>

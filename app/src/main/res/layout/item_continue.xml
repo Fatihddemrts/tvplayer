@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  "İzlemeye Devam Et" kartı: 16:9 görsel, sol üstte durum rozeti
+  ("▶ Devam" / "Sıradaki"), altta ilerleme çubuğu; altında dizi adı ve
+  "S2 · B14 · 23 dk kaldı" satırı.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="@dimen/continue_w"
+    android:layout_height="wrap_content"
+    android:layout_marginEnd="@dimen/card_gap"
+    android:orientation="vertical">
+
+    <FrameLayout
+        android:id="@+id/card_frame"
+        android:layout_width="@dimen/continue_w"
+        android:layout_height="@dimen/continue_h"
+        android:background="@drawable/card_selector"
+        android:clipToOutline="true"
+        android:focusable="true"
+        android:focusableInTouchMode="false">
+
+        <ImageView
+            android:id="@+id/poster"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_margin="2dp"
+            android:contentDescription="@null"
+            android:scaleType="centerCrop" />
+
+        <TextView
+            android:id="@+id/badge"
+            style="@style/Text.Label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|start"
+            android:layout_margin="6dp"
+            android:background="@drawable/bg_pill"
+            android:paddingStart="8dp"
+            android:paddingTop="2dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="2dp"
+            tools:text="▶ Devam" />
+
+        <ProgressBar
+            android:id="@+id/progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="4dp"
+            android:layout_gravity="bottom"
+            android:layout_marginStart="6dp"
+            android:layout_marginEnd="6dp"
+            android:layout_marginBottom="6dp"
+            android:max="100"
+            android:progressTint="@color/primary_container"
+            android:visibility="gone"
+            tools:progress="40"
+            tools:visibility="visible" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/title"
+        style="@style/Text.Body"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/on_surface"
+        android:textStyle="bold"
+        tools:text="The Mentalist" />
+
+    <TextView
+        android:id="@+id/subtitle"
+        style="@style/Text.Body"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/on_surface_variant"
+        tools:text="S2 · B14 · 23 dk kaldı" />
+</LinearLayout>

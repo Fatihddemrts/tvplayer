@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Telefon ölçüleri (varsayılan kova).
+
+  Televizyon ve tabletin değerleri values-w600dp/dimens.xml içinde. Ayrım
+  gerekliydi: TV için ayarlanmış 150dp'lik kenar çubuğu ve 40dp'lik overscan
+  boşluğu, 360dp genişliğindeki bir telefonda ekranın yarısını yiyordu.
+-->
+<resources>
+    <!-- Telefonda overscan diye bir şey yok; kenar boşlukları küçük. -->
+    <dimen name="safe_margin_x">16dp</dimen>
+    <dimen name="safe_margin_y">12dp</dimen>
+    <dimen name="gutter">8dp</dimen>
+    <dimen name="card_gap">10dp</dimen>
+
+    <!--
+      Dokunma hedefi alt sınırı. Kumandada 0 (içerik kadar); dokunmatik
+      ekranlarda values-finger 48dp yapıyor — Android'in önerdiği en küçük boy.
+    -->
+    <dimen name="touch_min_height">0dp</dimen>
+    <dimen name="player_button_size">44dp</dimen>
+
+    <dimen name="radius_card">14dp</dimen>
+    <dimen name="radius_modal">20dp</dimen>
+
+    <!-- Yalnız ikon: dar ekranda etiketli çubuk çok yer kaplıyor. -->
+    <dimen name="sidebar_width">56dp</dimen>
+    <dimen name="category_width">130dp</dimen>
+    <dimen name="sidebar_width_expanded">120dp</dimen>
+
+    <!-- Kart boyutları -->
+    <dimen name="poster_w">96dp</dimen>
+    <dimen name="poster_h">144dp</dimen>
+    <dimen name="wide_w">160dp</dimen>
+    <dimen name="wide_h">90dp</dimen>
+    <!-- "İzlemeye Devam Et" kartı: ana sayfanın en önemli rafı, biraz daha büyük. -->
+    <dimen name="continue_w">200dp</dimen>
+    <dimen name="continue_h">113dp</dimen>
+    <dimen name="channel_w">150dp</dimen>
+    <dimen name="channel_h">72dp</dimen>
+
+    <!--
+      Tipografi. TV'de 10 adım uzaktan okunacak boyutlar gerekiyordu; telefon
+      elde tutulduğu için daha küçük değerler doğru.
+    -->
+    <dimen name="text_display_lg">22sp</dimen>
+    <dimen name="text_headline_lg">17sp</dimen>
+    <dimen name="text_headline_md">14sp</dimen>
+    <dimen name="text_title_lg">13sp</dimen>
+    <dimen name="text_body_lg">13sp</dimen>
+    <dimen name="text_body_md">12sp</dimen>
+    <dimen name="text_label_sm">9sp</dimen>
+</resources>
