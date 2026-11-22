@@ -8,4 +8,5 @@
 <resources>
     <dimen name="touch_min_height">48dp</dimen>
     <dimen name="player_button_size">52dp</dimen>
+    <dimen name="player_button_size_main">64dp</dimen>
 </resources>

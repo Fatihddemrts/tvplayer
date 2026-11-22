@@ -24,4 +24,7 @@
     <dimen name="text_body_lg">16sp</dimen>
     <dimen name="text_body_md">15sp</dimen>
     <dimen name="text_label_sm">12sp</dimen>
+
+    <dimen name="hero_text_max_width">520dp</dimen>
+    <dimen name="text_hero_title">32sp</dimen>
 </resources>

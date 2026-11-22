@@ -46,9 +46,12 @@ class PlaybackActivity : AppCompatActivity(), PlayerEngine.Listener {
     private lateinit var item: MediaItem
     private lateinit var videoContainer: FrameLayout
     private lateinit var controls: View
+    private lateinit var controlsTop: View
+    private lateinit var controlsBottom: View
     private lateinit var buffering: View
     private lateinit var status: TextView
     private lateinit var nowTitle: TextView
+    private lateinit var nowSubtitle: TextView
     private lateinit var timeCurrent: TextView
     private lateinit var timeTotal: TextView
     private lateinit var seek: SeekBar
@@ -133,18 +136,45 @@ class PlaybackActivity : AppCompatActivity(), PlayerEngine.Listener {
     private fun bindViews() {
         videoContainer = findViewById(R.id.video_container)
         controls = findViewById(R.id.controls)
+        controlsTop = findViewById(R.id.controls_top)
+        controlsBottom = findViewById(R.id.controls_bottom)
         buffering = findViewById(R.id.buffering)
         status = findViewById(R.id.status)
         nowTitle = findViewById(R.id.now_title)
+        nowSubtitle = findViewById(R.id.now_subtitle)
         timeCurrent = findViewById(R.id.time_current)
         timeTotal = findViewById(R.id.time_total)
         seek = findViewById(R.id.seek)
         btnPlayPause = findViewById(R.id.btn_play_pause)
         engineLabel = findViewById(R.id.engine_label)
 
-        nowTitle.text = item.title
+        updateTitles()
 
         btnPlayPause.setOnClickListener { togglePlayPause() }
+
+        // Odaklanan düğme hafifçe büyüsün: 3 metreden hangisinde olduğun belli olsun.
+        listOf(
+            R.id.btn_play_pause, R.id.btn_rewind, R.id.btn_forward, R.id.btn_prev,
+            R.id.btn_next, R.id.btn_audio, R.id.btn_subtitle, R.id.btn_engine
+        ).forEach { id ->
+            findViewById<View>(id).setOnFocusChangeListener { v, hasFocus ->
+                val scale = if (hasFocus) BUTTON_FOCUS_SCALE else 1f
+                v.animate().scaleX(scale).scaleY(scale).setDuration(120).start()
+            }
+        }
+
+        // Zaman çubuğu odaktayken sol/sağ gerçekten sarsın. SeekBar kendi
+        // başına yalnız imleci kaydırıyor, onStopTrackingTouch kumandada hiç
+        // çağrılmadığı için konum değişmiyordu.
+        seek.setOnKeyListener { _, keyCode, event ->
+            val step = when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> -SEEK_STEP_MS
+                KeyEvent.KEYCODE_DPAD_RIGHT -> SEEK_STEP_MS
+                else -> return@setOnKeyListener false
+            }
+            if (event.action == KeyEvent.ACTION_DOWN) seekBy(step)
+            true
+        }
         findViewById<View>(R.id.btn_prev).setOnClickListener { skip(-1) }
         findViewById<View>(R.id.btn_next).setOnClickListener { skip(1) }
         findViewById<View>(R.id.btn_rewind).setOnClickListener { seekBy(-SEEK_STEP_MS) }
@@ -303,7 +333,10 @@ class PlaybackActivity : AppCompatActivity(), PlayerEngine.Listener {
      */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
-            gestureArmed = !(controls.visibility == View.VISIBLE && isOnScreenInside(controls, ev))
+            // Panel artık tüm ekranı kaplıyor; yalnız üst ve alt şeritteki
+            // dokunuşlar panele ait, ortadaki boş alan paneli kapatabilsin.
+            gestureArmed = !(controls.visibility == View.VISIBLE &&
+                (isOnScreenInside(controlsTop, ev) || isOnScreenInside(controlsBottom, ev)))
         }
         if (gestureArmed) gestureDetector.onTouchEvent(ev)
         val handled = super.dispatchTouchEvent(ev)
@@ -393,11 +426,28 @@ class PlaybackActivity : AppCompatActivity(), PlayerEngine.Listener {
         savePosition()
         queueIndex = (queueIndex + delta + queue.size) % queue.size
         item = queue[queueIndex]
-        nowTitle.text = item.title
+        updateTitles()
         triedFallback = false
         showStatus(item.title)
         startEngine(chooseEngine(), Repository.position(item.id))
         showControls()
+    }
+
+    /**
+     * Üst şerit: dizide büyük başlık dizinin adı, altında "S2 · B14 · bölüm
+     * adı"; film ve kanalda içeriğin adı ve kategorisi.
+     */
+    private fun updateTitles() {
+        val parent = seriesParent
+        nowTitle.text = parent?.title ?: item.title
+        val subtitle = when {
+            parent != null && item.seasonNumber != null && item.episodeNumber != null ->
+                "${item.episodeLabel}  ·  ${item.title}"
+            parent != null -> item.title
+            else -> item.group
+        }
+        nowSubtitle.text = subtitle.orEmpty()
+        nowSubtitle.visibility = if (subtitle.isNullOrBlank()) View.GONE else View.VISIBLE
     }
 
     // --- PlayerEngine.Listener ---
@@ -539,17 +589,38 @@ class PlaybackActivity : AppCompatActivity(), PlayerEngine.Listener {
         }
         val target = (e.positionMs() + deltaMs).coerceIn(0, duration)
         e.seekTo(target)
+        // Çubuk hemen yeni konumu göstersin; motorun konumu bir sonraki
+        // tıkta güncelleniyor ve art arda basışlarda imleç geri sıçrıyordu.
+        seek.progress = (target * 1000 / duration).toInt()
+        timeCurrent.text = formatTime(target)
         showStatus(formatTime(target))
         showControls()
     }
 
+    /**
+     * Paneli gösterir. Panel kapalıyken açılıyorsa odak her zaman
+     * Oynat/Duraklat düğmesine gider: kumandada aşağı (veya herhangi bir yön)
+     * tuşuna basıp OK ile hemen duraklatılabilsin. Panel zaten açıksa odak
+     * kullanıcının bulunduğu düğmede kalır.
+     */
     private fun showControls() {
+        val wasHidden = controls.visibility != View.VISIBLE
         controls.visibility = View.VISIBLE
         // Donanım ses tuşlarıyla değişmiş olabilir.
         volumeControl?.refresh()
-        if (!controls.hasFocus()) btnPlayPause.requestFocus()
-        handler.removeCallbacks(hideControls)
-        handler.postDelayed(hideControls, CONTROLS_TIMEOUT_MS)
+        if (wasHidden || !controls.hasFocus()) btnPlayPause.requestFocus()
+        keepControlsAlive()
+    }
+
+    /**
+     * Panel açıkken her tuş basışı kapanma sayacını yeniler; yoksa düğmeler
+     * arasında gezinirken panel 5 sn dolunca kullanıcının elinden kayboluyordu.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && controls.visibility == View.VISIBLE) {
+            keepControlsAlive()
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private fun updateProgress() {
@@ -637,15 +708,27 @@ class PlaybackActivity : AppCompatActivity(), PlayerEngine.Listener {
             KeyEvent.KEYCODE_PROG_BLUE -> { showControls(); return true }
 
             // --- Yön tuşları ---
-            // Panel kapalıyken herhangi bir yön tuşu yalnızca paneli açar.
+            // Panel kapalıyken herhangi bir yön tuşu yalnızca paneli açar ve
+            // odağı Oynat/Duraklat'a verir (bkz. showControls): aşağı ok →
+            // OK, Netflix'teki gibi iki tuşla duraklatır.
             // Kör sarma/kanal değiştirme kullanıcıyı şaşırtıyordu: ekranda
             // hiçbir gösterge yokken basılan tuş içeriği kaydırıyordu.
-            // Sarma ve gezinme artık yalnız paneldeki düğmelerle ve
-            // kumandanın kendi medya tuşlarıyla yapılıyor.
+            // Sarma ve gezinme artık yalnız paneldeki düğmelerle, zaman
+            // çubuğuyla ve kumandanın kendi medya tuşlarıyla yapılıyor.
+            //
+            // Panel açıkken aşağı ok, odak nerede olursa olsun (başlık,
+            // zaman çubuğu, sağdaki ses/altyazı düğmeleri) Oynat/Duraklat'a
+            // döner; alt sırada aşağıda başka bir şey yok.
+            KeyEvent.KEYCODE_DPAD_DOWN ->
+                if (!controlsVisible || !btnPlayPause.hasFocus()) {
+                    showControls()
+                    btnPlayPause.requestFocus()
+                    return true
+                }
+
             KeyEvent.KEYCODE_DPAD_LEFT,
             KeyEvent.KEYCODE_DPAD_RIGHT,
             KeyEvent.KEYCODE_DPAD_UP,
-            KeyEvent.KEYCODE_DPAD_DOWN,
             KeyEvent.KEYCODE_DPAD_CENTER,
             KeyEvent.KEYCODE_ENTER ->
                 if (!controlsVisible) { showControls(); return true }
@@ -700,6 +783,7 @@ class PlaybackActivity : AppCompatActivity(), PlayerEngine.Listener {
         const val EXTRA_ITEM = "item"
         private const val EXTRA_INDEX = "index"
         private const val CONTROLS_TIMEOUT_MS = 5_000L
+        private const val BUTTON_FOCUS_SCALE = 1.15f
         private const val SEEK_STEP_MS = 10_000L
         /** Ekran genişliği boyunca tam bir yatay sürükleme bu kadar sarar. */
         private const val SEEK_SWIPE_SPAN_MS = 120_000L

@@ -19,12 +19,24 @@
     -->
     <dimen name="touch_min_height">0dp</dimen>
     <dimen name="player_button_size">44dp</dimen>
+    <!-- Oynat/Duraklat: panelin ana düğmesi, diğerlerinden büyük. -->
+    <dimen name="player_button_size_main">56dp</dimen>
 
-    <dimen name="radius_card">14dp</dimen>
+    <dimen name="radius_card">6dp</dimen>
     <dimen name="radius_modal">20dp</dimen>
+
+    <!--
+      Ana sayfa billboard'u (Netflix tarzı): üstte odaklanan içeriğin bilgisi,
+      arkasında görseli; raflar altta kayar.
+    -->
+    <dimen name="hero_height">210dp</dimen>
+    <dimen name="hero_backdrop_height">280dp</dimen>
+    <dimen name="hero_text_max_width">300dp</dimen>
+    <dimen name="text_hero_title">24sp</dimen>
 
     <!-- Yalnız ikon: dar ekranda etiketli çubuk çok yer kaplıyor. -->
     <dimen name="sidebar_width">56dp</dimen>
+    <dimen name="sidebar_pad">4dp</dimen>
     <dimen name="category_width">130dp</dimen>
     <dimen name="sidebar_width_expanded">120dp</dimen>
 

@@ -18,10 +18,17 @@
     <dimen name="gutter">12dp</dimen>
     <dimen name="card_gap">16dp</dimen>
 
-    <dimen name="radius_card">16dp</dimen>
+    <dimen name="radius_card">8dp</dimen>
     <dimen name="radius_modal">24dp</dimen>
 
-    <dimen name="sidebar_width">150dp</dimen>
+    <!-- Billboard: 540dp yüksekliğindeki TV ekranının yarısı bilgi, yarısı raflar. -->
+    <dimen name="hero_height">250dp</dimen>
+    <dimen name="hero_backdrop_height">380dp</dimen>
+    <dimen name="hero_text_max_width">440dp</dimen>
+    <dimen name="text_hero_title">30sp</dimen>
+
+    <dimen name="sidebar_width">170dp</dimen>
+    <dimen name="sidebar_pad">10dp</dimen>
     <!-- Kategori sütunu: "FILM: En Yeniler 2025" gibi uzun adlar sığmalı -->
     <dimen name="category_width">200dp</dimen>
     <dimen name="sidebar_width_expanded">120dp</dimen>

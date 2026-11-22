@@ -21,8 +21,10 @@ import com.orhan.iptv.data.HistoryEntry
 class ContinueAdapter(
     private val onClick: (HistoryEntry) -> Unit,
     /** Uzun basış: kaydı raftan kaldır. */
-    private val onLongClick: (HistoryEntry) -> Unit
-) : RecyclerView.Adapter<ContinueAdapter.VH>() {
+    private val onLongClick: (HistoryEntry) -> Unit,
+    /** Kart odak aldı: ana sayfa billboard'u bu kayda döner. */
+    private val onFocus: (HistoryEntry) -> Unit = {}
+) :RecyclerView.Adapter<ContinueAdapter.VH>() {
 
     private var items: List<HistoryEntry> = emptyList()
 
@@ -110,6 +112,7 @@ class ContinueAdapter(
                 val scale = if (hasFocus) 1.1f else 1f
                 v.animate().scaleX(scale).scaleY(scale).setDuration(140).start()
                 title.animate().alpha(if (hasFocus) 1f else 0.8f).setDuration(140).start()
+                if (hasFocus) onFocus(entry)
             }
             title.alpha = if (frame.hasFocus()) 1f else 0.8f
         }

@@ -34,9 +34,10 @@
     <style name="SidebarItem" parent="">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:background">@drawable/sidebar_row_selector</item>
-        <item name="android:drawablePadding">10dp</item>
-        <item name="android:drawableTint">@color/on_surface</item>
+        <item name="android:background">@drawable/nav_row_selector</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:drawablePadding">12dp</item>
+        <item name="android:drawableTint">@color/nav_item_text</item>
         <item name="android:focusable">true</item>
         <item name="android:minHeight">@dimen/touch_min_height</item>
         <item name="android:gravity">center_vertical</item>
@@ -47,7 +48,7 @@
         <item name="android:singleLine">true</item>
         <item name="android:ellipsize">end</item>
         <item name="android:textSize">@dimen/text_body_md</item>
-        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:textColor">@color/nav_item_text</item>
     </style>
 
     <!-- Tüm ekranlarda aynı, gerçekten dönen yükleme göstergesi -->
@@ -129,9 +130,36 @@
         <item name="android:layout_height">@dimen/player_button_size</item>
         <item name="android:layout_marginEnd">10dp</item>
         <item name="android:padding">10dp</item>
-        <item name="android:background">@drawable/sidebar_item_selector</item>
+        <item name="android:background">@drawable/player_button_selector</item>
         <item name="android:focusable">true</item>
         <item name="android:scaleType">fitCenter</item>
+    </style>
+
+    <!-- Billboard düğmeleri ("Oynat", "Detaylar"): Netflix'teki gibi odakta beyaz. -->
+    <style name="HeroButton" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/bg_hero_button</item>
+        <item name="android:focusable">true</item>
+        <item name="android:minHeight">@dimen/touch_min_height</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingStart">22dp</item>
+        <item name="android:paddingEnd">22dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:textSize">@dimen/text_title_lg</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/hero_button_text</item>
+    </style>
+
+    <style name="Text.HeroTitle" parent="">
+        <item name="android:textSize">@dimen/text_hero_title</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:shadowColor">#99000000</item>
+        <item name="android:shadowRadius">8</item>
+        <item name="android:shadowDy">2</item>
     </style>
 
     <style name="Text.Label" parent="">

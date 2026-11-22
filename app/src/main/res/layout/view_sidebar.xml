@@ -1,16 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Kenar çubuğu: ikon + ad. Adlar TV'de tek bakışta okunabilsin diye ikon
-  yanında duruyor; yalnız ikon bırakmak hangi bölümün ne olduğunu tahmine
-  bırakıyordu.
+  Kenar çubuğu (Netflix TV tarzı): üstte marka, altında Ara + bölümler,
+  en altta Yenile ve Ayarlar. Odakta satır beyaza döner, etkin bölümün
+  solunda kırmızı şerit durur. Dar ekranda yalnız ikonlar kalır.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="@dimen/sidebar_width"
     android:layout_height="match_parent"
     android:background="@color/surface_container_lowest"
     android:orientation="vertical"
+    android:paddingStart="@dimen/sidebar_pad"
+    android:paddingEnd="@dimen/sidebar_pad"
     android:paddingTop="@dimen/safe_margin_y"
     android:paddingBottom="@dimen/safe_margin_y">
+
+    <TextView
+        android:id="@+id/nav_brand"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="14dp"
+        android:ellipsize="end"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="4dp"
+        android:singleLine="true"
+        android:text="@string/app_name"
+        android:textColor="@color/primary"
+        android:textSize="@dimen/text_headline_lg"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/nav_search"
+        style="@style/SidebarItem"
+        android:drawableStart="@drawable/ic_search"
+        android:text="@string/search_title" />
 
     <TextView
         android:id="@+id/nav_home"
@@ -52,6 +75,12 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:layout_weight="1" />
+
+    <TextView
+        android:id="@+id/nav_refresh"
+        style="@style/SidebarItem"
+        android:drawableStart="@drawable/ic_refresh"
+        android:text="@string/menu_refresh" />
 
     <TextView
         android:id="@+id/nav_settings"

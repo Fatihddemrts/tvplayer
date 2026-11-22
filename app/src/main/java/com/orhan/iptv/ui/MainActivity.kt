@@ -2,7 +2,11 @@ package com.orhan.iptv.ui
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.Gravity
 import android.view.View
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -13,6 +17,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
 import com.orhan.iptv.R
 import com.orhan.iptv.data.Catalog
 import com.orhan.iptv.data.CatalogLoader
@@ -21,6 +27,7 @@ import com.orhan.iptv.data.MediaItem
 import com.orhan.iptv.data.MediaKind
 import com.orhan.iptv.data.Repository
 import com.orhan.iptv.data.SourceType
+import com.orhan.iptv.data.meta.MetadataCache
 import com.orhan.iptv.player.PlaybackActivity
 import com.orhan.iptv.ui.detail.DetailsActivity
 import com.orhan.iptv.ui.music.MusicBrowseActivity
@@ -49,18 +56,56 @@ private enum class SortMode(val label: String) {
 }
 
 /**
+ * Ana sayfa billboard'unda gösterilen içerik.
+ * [entry] doluysa bir "izlemeye devam et" kaydıdır; [list] canlı kanallarda
+ * oynatıcıya verilecek sıradır (kanal yukarı/aşağı bu listede gezer).
+ */
+private data class Hero(
+    val item: MediaItem,
+    val entry: HistoryEntry? = null,
+    val list: List<MediaItem> = emptyList()
+)
+
+/**
  * Ana ekran.
  *
- * Ana Sayfa bölüm kutuları ve raylar; diğer bölümler solda kategori sütunu,
- * sağda içerik ızgarası. Katalog bir kez yüklenip bellekte tutuluyor, bölüm
- * ve kategori değişimi ağ beklemeden çiziliyor.
+ * Ana Sayfa Netflix düzeninde: üstte odaklanan içeriğe göre değişen bir
+ * billboard (görsel, ad, künye, özet, Oynat/Detaylar), altında yatay raflar.
+ * Diğer bölümler solda kategori sütunu, sağda içerik ızgarası. Katalog bir
+ * kez yüklenip bellekte tutuluyor, bölüm ve kategori değişimi ağ beklemeden
+ * çiziliyor.
  */
 class MainActivity : AppCompatActivity() {
 
     // Ana Sayfa
+    private lateinit var homePane: View
     private lateinit var homeScroll: NestedScrollView
     private lateinit var railsContainer: LinearLayout
     private lateinit var emptyHint: TextView
+
+    // Billboard
+    private lateinit var heroBackdrop: ImageView
+    private lateinit var heroKicker: TextView
+    private lateinit var heroTitle: TextView
+    private lateinit var heroMeta: TextView
+    private lateinit var heroDesc: TextView
+    private lateinit var heroButtons: View
+    private lateinit var heroPlay: TextView
+    private lateinit var heroMore: TextView
+
+    /** Billboard'da şu an gösterilen içerik; düğmeler buna göre çalışır. */
+    private var hero: Hero? = null
+    private var heroImageUrl: String? = null
+
+    /** Geçmiş yokken öne çıkarılan içerik; oturum boyunca sabit kalsın. */
+    private var featuredId: String? = null
+
+    /**
+     * Kumanda raflarda hızla gezinirken billboard her kartta yeniden
+     * çizilmesin: odak kısa bir süre aynı kartta kalınca güncellenir.
+     */
+    private val heroHandler = Handler(Looper.getMainLooper())
+    private var pendingHero: Runnable? = null
 
     // Gözat
     private lateinit var browsePane: View
@@ -129,10 +174,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onDestroy() {
+        heroHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
+    }
+
     private fun bindViews() {
+        homePane = findViewById(R.id.home_pane)
         homeScroll = findViewById(R.id.home_scroll)
         railsContainer = findViewById(R.id.rails_container)
         emptyHint = findViewById(R.id.empty_hint)
+
+        heroBackdrop = findViewById(R.id.hero_backdrop)
+        heroKicker = findViewById(R.id.hero_kicker)
+        heroTitle = findViewById(R.id.hero_title)
+        heroMeta = findViewById(R.id.hero_meta)
+        heroDesc = findViewById(R.id.hero_desc)
+        heroButtons = findViewById(R.id.hero_buttons)
+        heroPlay = findViewById(R.id.hero_play)
+        heroMore = findViewById(R.id.hero_more)
 
         browsePane = findViewById(R.id.browse_pane)
         sectionTitle = findViewById(R.id.section_title)
@@ -145,17 +205,20 @@ class MainActivity : AppCompatActivity() {
 
         loading = findViewById(R.id.loading)
 
-        // Ana sayfadan arama tüm bölümleri kapsar.
-        findViewById<View>(R.id.hero_search).setOnClickListener {
-            SearchActivity.start(this, SearchActivity.Scope.ALL)
+        heroPlay.setOnClickListener { playHero() }
+        heroMore.setOnClickListener { openHeroDetails() }
+        // Billboard düğmesine gelindiğinde raflar başa dönsün; düğmeler ve
+        // ilk raf birlikte görünür kalır.
+        val scrollTopOnFocus = View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) homeScroll.smoothScrollTo(0, 0)
         }
+        heroPlay.onFocusChangeListener = scrollTopOnFocus
+        heroMore.onFocusChangeListener = scrollTopOnFocus
+
         findViewById<View>(R.id.btn_search).setOnClickListener { openSearchForSection() }
-        // Yenile: Xtream/M3U kataloğunu sunucudan baştan indirir; sağlayıcıda
-        // kategori eklenip çıkarıldığında uygulamanın haberi olsun.
-        findViewById<View>(R.id.home_refresh).setOnClickListener { refresh() }
     }
 
-    /** Gözat ekranındaki arama yalnız o bölümde arar. */
+    /** Gözat ekranındaki arama yalnız o bölümde arar; ana sayfadan her şeyde. */
     private fun openSearchForSection() = SearchActivity.start(
         this,
         when (section) {
@@ -177,10 +240,14 @@ class MainActivity : AppCompatActivity() {
         applySidebarLabels()
 
         navIcons.forEach { (target, icon) -> icon.setOnClickListener { show(target) } }
+        findViewById<View>(R.id.nav_search).setOnClickListener { openSearchForSection() }
         findViewById<View>(R.id.nav_music).setOnClickListener {
             startActivity(Intent(this, MusicBrowseActivity::class.java))
         }
         findViewById<View>(R.id.nav_nas).setOnClickListener { openNas() }
+        // Yenile: Xtream/M3U kataloğunu sunucudan baştan indirir; sağlayıcıda
+        // kategori eklenip çıkarıldığında uygulamanın haberi olsun.
+        findViewById<View>(R.id.nav_refresh).setOnClickListener { refresh() }
         findViewById<View>(R.id.nav_settings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
@@ -198,15 +265,23 @@ class MainActivity : AppCompatActivity() {
         if (resources.getBoolean(R.bool.sidebar_show_labels)) return
 
         val allItems = navIcons.values + listOf<TextView>(
+            findViewById(R.id.nav_search),
             findViewById(R.id.nav_music),
             findViewById(R.id.nav_nas),
+            findViewById(R.id.nav_refresh),
             findViewById(R.id.nav_settings)
         )
         allItems.forEach { item ->
             item.contentDescription = item.text
             item.text = ""
             // İkonu ortala: metin gidince drawableStart sola yapışık kalıyor.
-            item.gravity = android.view.Gravity.CENTER
+            item.gravity = Gravity.CENTER
+        }
+        // Marka adı sığmıyor; baş harfi kalsın.
+        findViewById<TextView>(R.id.nav_brand).apply {
+            text = getString(R.string.app_name).take(1)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 0)
         }
     }
 
@@ -308,14 +383,14 @@ class MainActivity : AppCompatActivity() {
 
     /** Ana Sayfa ile Gözat arasında geçiş. */
     private fun showHomeChrome(home: Boolean) {
-        homeScroll.visibility = if (home) View.VISIBLE else View.GONE
+        homePane.visibility = if (home) View.VISIBLE else View.GONE
         browsePane.visibility = if (home) View.GONE else View.VISIBLE
     }
 
     private fun renderHome() {
-        // Odak raylardaysa (veya hiç yoksa) yeniden çizimden sonra "devam et"
+        // Odak ana sayfadaysa (veya hiç yoksa) yeniden çizimden sonra "devam et"
         // kartına geri ver; kenar çubuğundaysa kullanıcıyı oradan koparma.
-        val takeFocus = firstHomeRender || railsContainer.hasFocus() || currentFocus == null
+        val takeFocus = firstHomeRender || homePane.hasFocus() || currentFocus == null
         firstHomeRender = false
 
         railsContainer.removeAllViews()
@@ -324,21 +399,181 @@ class MainActivity : AppCompatActivity() {
         emptyHint.visibility = View.GONE
 
         // İzlemeye devam et en üstte: kullanıcının çoğu zaman aradığı şey bu.
-        addContinueRail(continueEntries(), takeFocus)
+        val entries = continueEntries()
+        addContinueRail(entries, takeFocus)
 
-        addSectionTiles()
-
-        // Favoriler türlerine göre ayrı raylarda; boşken de başlık görünsün ki
-        // özelliğin var olduğu belli olsun.
+        // Favoriler türlerine göre ayrı raflarda; boş raf gösterilmiyor.
         val favorites = Repository.favorites()
-        addFavoriteRail("Favori Kanallar", favorites.filter { it.kind == MediaKind.LIVE }, CardStyle.CHANNEL)
-        addFavoriteRail("Favori Filmler", favorites.filter { it.kind == MediaKind.VOD }, CardStyle.POSTER)
-        addFavoriteRail("Favori Diziler", favorites.filter { it.kind == MediaKind.SERIES }, CardStyle.POSTER)
+        addRail("Favori Kanallar", favorites.filter { it.kind == MediaKind.LIVE }, CardStyle.CHANNEL)
+        addRail("Favori Filmler", favorites.filter { it.kind == MediaKind.VOD }, CardStyle.POSTER)
+        addRail("Favori Diziler", favorites.filter { it.kind == MediaKind.SERIES }, CardStyle.POSTER)
+
+        // Katalogdan tadımlık raflar: her türün ilk birkaç kategorisi.
+        addKindRails(catalog.vod, getString(R.string.row_vod))
+        addKindRails(catalog.series, getString(R.string.row_series))
+        addRail(getString(R.string.row_live), catalog.live.take(PREVIEW_COUNT), CardStyle.CHANNEL)
+
+        showHero(defaultHero(entries))
+        // "Devam et" yoksa odak billboard'un Oynat düğmesine.
+        if (takeFocus && continueRail == null && heroButtons.visibility == View.VISIBLE) {
+            heroPlay.requestFocus()
+        }
 
         if (catalog.isEmpty && Repository.sources().isEmpty()) {
             emptyHint.visibility = View.VISIBLE
             emptyHint.text = getString(R.string.empty_hint)
         }
+    }
+
+    // --- Billboard ---
+
+    /**
+     * Açılıştaki billboard: son izlenen içerik; geçmiş yoksa görseli olan
+     * filmlerden/dizilerden rastgele biri (oturum boyunca aynı kalır).
+     */
+    private fun defaultHero(entries: List<HistoryEntry>): Hero? {
+        entries.firstOrNull()?.let { return Hero(it.parent, it) }
+
+        val pool = (
+            catalog.vod.asSequence().filter { !it.logoUrl.isNullOrBlank() }.take(FEATURED_POOL) +
+                catalog.series.asSequence().filter { !it.logoUrl.isNullOrBlank() }.take(FEATURED_POOL)
+            ).toList()
+        if (pool.isEmpty()) return null
+        val featured = pool.firstOrNull { it.id == featuredId }
+            ?: pool.random().also { featuredId = it.id }
+        return Hero(featured)
+    }
+
+    /** Kart odağı biraz oturunca billboard'u o içeriğe çevirir. */
+    private fun scheduleHero(target: Hero) {
+        pendingHero?.let { heroHandler.removeCallbacks(it) }
+        val task = Runnable { showHero(target) }
+        pendingHero = task
+        heroHandler.postDelayed(task, HERO_DELAY_MS)
+    }
+
+    private fun showHero(target: Hero?) {
+        hero = target
+        if (target == null) {
+            heroKicker.visibility = View.GONE
+            heroTitle.text = getString(R.string.app_name)
+            heroMeta.visibility = View.GONE
+            heroDesc.visibility = View.GONE
+            heroButtons.visibility = View.GONE
+            setHeroImage(null)
+            return
+        }
+
+        val item = target.item
+        val entry = target.entry
+        val detail = (MetadataCache.get(item.id) as? MetadataCache.Entry.Hit)?.detail
+
+        heroKicker.visibility = View.VISIBLE
+        heroKicker.text = when {
+            entry != null -> "İZLEMEYE DEVAM ET"
+            item.kind == MediaKind.LIVE -> "CANLI YAYIN"
+            item.kind == MediaKind.SERIES -> "DİZİ"
+            item.kind == MediaKind.VOD -> "FİLM"
+            else -> ""
+        }
+        heroTitle.text = item.title
+
+        val meta = when {
+            entry != null -> continueMeta(entry)
+            detail != null -> listOfNotNull(
+                detail.year,
+                detail.rating?.let { "★ %.1f".format(it) },
+                detail.durationText,
+                detail.genre
+            ).joinToString("  ·  ")
+            else -> item.group.orEmpty()
+        }
+        heroMeta.text = meta
+        heroMeta.visibility = if (meta.isBlank()) View.GONE else View.VISIBLE
+
+        val description = (entry?.episode?.description ?: detail?.plot ?: item.description)
+            ?.takeIf { it.isNotBlank() }
+        heroDesc.text = description.orEmpty()
+        heroDesc.visibility = if (description == null) View.GONE else View.VISIBLE
+
+        heroButtons.visibility = View.VISIBLE
+        heroPlay.text = when {
+            entry != null && entry.isUpNext -> "▶  Sıradaki Bölüm"
+            entry != null -> "▶  Devam Et"
+            item.kind == MediaKind.LIVE -> "▶  İzle"
+            item.kind == MediaKind.VOD && Repository.position(item.id) > 0 -> "▶  Devam Et"
+            else -> "▶  Oynat"
+        }
+        val hasDetails = item.kind == MediaKind.VOD || item.kind == MediaKind.SERIES
+        if (!hasDetails && heroMore.hasFocus()) heroPlay.requestFocus()
+        heroMore.visibility = if (hasDetails) View.VISIBLE else View.GONE
+
+        // Canlı kanal logoları küçük; geniş görsel olarak çirkin büyüyor.
+        val image = if (item.kind == MediaKind.LIVE) null else {
+            entry?.episode?.logoUrl?.takeIf { it.isNotBlank() }
+                ?: detail?.posterUrl?.takeIf { it.isNotBlank() }
+                ?: item.logoUrl?.takeIf { it.isNotBlank() }
+        }
+        setHeroImage(image)
+    }
+
+    private fun setHeroImage(url: String?) {
+        if (url == heroImageUrl) return
+        heroImageUrl = url
+        if (url == null) {
+            Glide.with(this).clear(heroBackdrop)
+            heroBackdrop.setImageDrawable(null)
+        } else {
+            Glide.with(this)
+                .load(url)
+                .transition(DrawableTransitionOptions.withCrossFade(HERO_FADE_MS))
+                .into(heroBackdrop)
+        }
+    }
+
+    /** "S2 · B14 · 23 dk kaldı" gibi; "devam et" kartındaki satırla aynı dil. */
+    private fun continueMeta(entry: HistoryEntry): String {
+        val remaining = if (entry.durationMs > 0) {
+            ((entry.durationMs - entry.positionMs) / 60_000L).coerceAtLeast(1)
+        } else -1L
+        val remainingText = if (remaining > 0) "$remaining dk kaldı" else "Kaldığı yerden"
+        return when {
+            entry.finished -> "${entry.playable.episodeLabel} bitti · sıradaki bölüm"
+            entry.isUpNext -> "Sıradaki: ${entry.playable.episodeLabel}"
+            entry.isSeries -> "${entry.playable.episodeLabel}  ·  $remainingText"
+            else -> remainingText
+        }
+    }
+
+    private fun playHero() {
+        val target = hero ?: return
+        val entry = target.entry
+        when {
+            entry != null -> ContinueWatching.play(this, entry, loading)
+            target.item.kind == MediaKind.LIVE ->
+                openFromList(target.list.ifEmpty { listOf(target.item) }, target.item)
+            // Film kaldığı yerden doğrudan başlar; dizide bölüm seçimi gerekir.
+            target.item.kind == MediaKind.VOD -> PlaybackActivity.start(this, target.item)
+            else -> open(target.item)
+        }
+    }
+
+    private fun openHeroDetails() {
+        val item = hero?.item ?: return
+        if (item.kind != MediaKind.VOD && item.kind != MediaKind.SERIES) return
+        startActivity(
+            Intent(this, DetailsActivity::class.java).putExtra(DetailsActivity.EXTRA_ITEM, item)
+        )
+    }
+
+    /**
+     * Bir rafta kart odak aldı: raf billboard'un hemen altına kaysın
+     * (Netflix TV'deki gibi odaklı raf hep aynı yerde) ve billboard o
+     * içeriği göstersin.
+     */
+    private fun onCardFocused(rail: View, target: Hero) {
+        homeScroll.post { homeScroll.smoothScrollTo(0, railsContainer.top + rail.top) }
+        scheduleHero(target)
     }
 
     // --- İzlemeye Devam Et ---
@@ -378,7 +613,8 @@ class MainActivity : AppCompatActivity() {
                 if (!entry.isSeries) Repository.clearPosition(entry.key)
                 Toast.makeText(this, "${entry.parent.title} listeden kaldırıldı", Toast.LENGTH_SHORT).show()
                 refreshContinueRail()
-            }
+            },
+            onFocus = { entry -> onCardFocused(rail, Hero(entry.parent, entry)) }
         )
         list.adapter = adapter
         adapter.submit(entries)
@@ -393,11 +629,14 @@ class MainActivity : AppCompatActivity() {
     private fun continueTitle(entries: List<HistoryEntry>) =
         if (entries.size > 1) "İzlemeye Devam Et  ·  ${entries.size}" else "İzlemeye Devam Et"
 
-    /** Yalnız "devam et" rafını günceller; diğer raylar ve odak yerinde kalır. */
+    /** Yalnız "devam et" rafını günceller; diğer raflar ve odak yerinde kalır. */
     private fun refreshContinueRail() {
         val entries = continueEntries()
         val rail = continueRail
         val adapter = continueAdapter
+
+        // Billboard bir geçmiş kaydı gösteriyorsa en son izlenene güncellensin.
+        if (hero == null || hero?.entry != null) showHero(defaultHero(entries))
 
         if (rail == null || adapter == null) {
             if (entries.isNotEmpty()) addContinueRail(entries, takeFocus = currentFocus == null)
@@ -408,7 +647,10 @@ class MainActivity : AppCompatActivity() {
             railsContainer.removeView(rail)
             continueRail = null
             continueAdapter = null
-            if (hadFocus) railsContainer.requestFocus()
+            if (hadFocus) {
+                if (heroButtons.visibility == View.VISIBLE) heroPlay.requestFocus()
+                else railsContainer.requestFocus()
+            }
             return
         }
 
@@ -431,54 +673,22 @@ class MainActivity : AppCompatActivity() {
         list.requestLayout()
     }
 
-    /** Favori rayı; boşsa başlık ve yönlendirme metniyle gösterilir. */
-    private fun addFavoriteRail(title: String, items: List<MediaItem>, style: CardStyle) {
-        if (items.isNotEmpty()) {
-            addRail(title, items, style)
+    /**
+     * Bir türün (film/dizi) ilk birkaç kategorisini ayrı raflar olarak ekler.
+     * Listede kategori yoksa ya da tek kategori varsa tek bir raf çizilir.
+     */
+    private fun addKindRails(items: List<MediaItem>, fallbackTitle: String) {
+        if (items.isEmpty()) return
+        // groupBy ilk görülme sırasını koruyor: sağlayıcının sıralaması
+        // (çoğunlukla "en yeniler" başta) raflara da yansısın.
+        val byGroup = items.filter { !it.group.isNullOrBlank() }.groupBy { it.group!! }
+        if (byGroup.size < 2) {
+            addRail(fallbackTitle, items.take(PREVIEW_COUNT), CardStyle.POSTER)
             return
         }
-        val rail = layoutInflater.inflate(R.layout.view_rail, railsContainer, false)
-        rail.findViewById<TextView>(R.id.rail_title).text = title
-        rail.findViewById<RecyclerView>(R.id.rail_list).visibility = View.GONE
-
-        val hint = TextView(this).apply {
-            text = "Henüz favori yok — bir karta uzun basarak ekleyin."
-            setTextColor(getColor(R.color.on_surface_variant))
-            textSize = 9f
+        byGroup.entries.take(MAX_GROUP_RAILS).forEach { (name, list) ->
+            addRail(name, list.take(PREVIEW_COUNT), CardStyle.POSTER)
         }
-        (rail as android.view.ViewGroup).addView(hint)
-        railsContainer.addView(rail)
-    }
-
-    /**
-     * Bölüm kutuları: kenar çubuğundaki bölümlerin büyük, renkli karşılıkları.
-     * Uzaktan bakıldığında nereye gidileceği tek bakışta anlaşılsın diye
-     * her bölüm ayrı renkte.
-     */
-    private fun addSectionTiles() {
-        val tiles = listOf(
-            Tile(getString(R.string.row_live), R.drawable.ic_live, 0xFF4B8EFF.toInt(),
-                "${catalog.live.size} kanal") { show(Section.LIVE) },
-            Tile(getString(R.string.row_vod), R.drawable.ic_movie, 0xFF3834B6.toInt(),
-                "${catalog.vod.size} film") { show(Section.MOVIES) },
-            Tile(getString(R.string.row_series), R.drawable.ic_series, 0xFFEF6719.toInt(),
-                "${catalog.series.size} dizi") { show(Section.SERIES) },
-            Tile(getString(R.string.row_music), R.drawable.ic_music, 0xFF00A97F.toInt(),
-                "NAS · USB") { startActivity(Intent(this, MusicBrowseActivity::class.java)) },
-            Tile(getString(R.string.row_nas), R.drawable.ic_nas, 0xFFB0348A.toInt(),
-                "Video · Foto") { openNas() },
-            Tile(getString(R.string.row_settings), R.drawable.ic_settings, 0xFF5A6270.toInt(),
-                "Kaynak · Dil") { startActivity(Intent(this, SettingsActivity::class.java)) }
-        )
-
-        val rail = layoutInflater.inflate(R.layout.view_rail, railsContainer, false)
-        rail.findViewById<TextView>(R.id.rail_title).text = "Bölümler"
-        val list = rail.findViewById<RecyclerView>(R.id.rail_list)
-        list.layoutManager = LinearLayoutManager(this, RecyclerView.HORIZONTAL, false)
-        list.clipChildren = false
-        (rail as android.view.ViewGroup).clipChildren = false
-        list.adapter = SectionTileAdapter(tiles)
-        railsContainer.addView(rail)
     }
 
     private fun renderBrowse() {
@@ -559,20 +769,22 @@ class MainActivity : AppCompatActivity() {
             // Sırayı da geçiriyoruz: oynatıcıda önceki/sonraki ve kanal
             // tuşları bu liste üzerinde gezinsin.
             onClick = { openFromList(items, it) },
-            onLongClick = { item ->
-                val added = Repository.toggleFavorite(item)
-                Toast.makeText(
-                    this,
-                    if (added) "${item.title} favorilere eklendi"
-                    else "${item.title} favorilerden çıkarıldı",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            onLongClick = { item -> toggleFavorite(item) }
         )
         contentAdapter = adapter
         contentGrid.adapter = adapter
         adapter.submit(items)
         contentGrid.scrollToPosition(0)
+    }
+
+    private fun toggleFavorite(item: MediaItem) {
+        val added = Repository.toggleFavorite(item)
+        Toast.makeText(
+            this,
+            if (added) "${item.title} favorilere eklendi"
+            else "${item.title} favorilerden çıkarıldı",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     /** Ölçülen genişliğe kaç kart sığıyor; en az 1. */
@@ -589,7 +801,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Yatay bir raf ekler.
+     * Yatay bir raf ekler; boş listede hiçbir şey çizmez.
      *
      * Lint uyarısı bastırılıyor: kontrol, düzendeki wrap_content'i kaydırma
      * yönü sanıyor. Raf YATAY kaydırıyor, o yöndeki ölçü match_parent;
@@ -597,9 +809,9 @@ class MainActivity : AppCompatActivity() {
      */
     @android.annotation.SuppressLint("InvalidSetHasFixedSize")
     private fun addRail(title: String, items: List<MediaItem>, style: CardStyle) {
+        if (items.isEmpty()) return
         val rail = layoutInflater.inflate(R.layout.view_rail, railsContainer, false)
-        rail.findViewById<TextView>(R.id.rail_title).text =
-            if (items.size > 1) "$title  ·  ${items.size}" else title
+        rail.findViewById<TextView>(R.id.rail_title).text = title
 
         val list = rail.findViewById<RecyclerView>(R.id.rail_list)
         list.layoutManager = LinearLayoutManager(this, RecyclerView.HORIZONTAL, false)
@@ -610,16 +822,8 @@ class MainActivity : AppCompatActivity() {
         val adapter = MediaAdapter(
             style = style,
             onClick = { openFromList(items, it) },
-
-            onLongClick = { item ->
-                val added = Repository.toggleFavorite(item)
-                Toast.makeText(
-                    this,
-                    if (added) "${item.title} favorilere eklendi"
-                    else "${item.title} favorilerden çıkarıldı",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            onFocus = { item -> onCardFocused(rail, Hero(item, list = items)) },
+            onLongClick = { item -> toggleFavorite(item) }
         )
         list.adapter = adapter
         adapter.submit(items)
@@ -691,6 +895,11 @@ class MainActivity : AppCompatActivity() {
             // İçerikteyken önce kategori sütununa dön.
             section != Section.HOME && contentGrid.hasFocus() -> categoryList.requestFocus()
             section != Section.HOME -> show(Section.HOME)
+            // Raflarda aşağı inilmişse GERİ önce başa, billboard'a döner.
+            homeScroll.hasFocus() && heroButtons.visibility == View.VISIBLE -> {
+                homeScroll.smoothScrollTo(0, 0)
+                heroPlay.requestFocus()
+            }
             else -> super.onBackPressed()
         }
     }
@@ -749,7 +958,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private companion object {
-        /** Ana sayfada her bölümden gösterilen tadımlık öğe sayısı. */
+        /** Ana sayfada her raftan gösterilen tadımlık öğe sayısı. */
         const val PREVIEW_COUNT = 20
+
+        /** Film ve dizilerde ana sayfaya taşınan kategori sayısı. */
+        const val MAX_GROUP_RAILS = 3
+
+        /** Öne çıkan içerik için bakılan film/dizi sayısı (her türden). */
+        const val FEATURED_POOL = 30
+
+        /** Kart odağı bu kadar kalınca billboard güncellenir. */
+        const val HERO_DELAY_MS = 220L
+        const val HERO_FADE_MS = 300
     }
 }
