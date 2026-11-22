@@ -22,8 +22,8 @@ android {
         applicationId = "com.orhan.iptv"
         minSdk = 21          // Bravia ATV3 is API 28; 21 keeps it broad
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
 
         // libVLC her ABI için ~25 MB yerli kütüphane taşıyor. Varsayılan olarak
         // yalnız ARM üretiyoruz (hedef Sony Bravia ATV3); APK 98 MB yerine
